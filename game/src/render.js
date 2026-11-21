@@ -186,16 +186,45 @@ export function createRenderer(canvas) {
     ctx.fillRect(e.x - 2, e.y - 8, 4, 16);
   }
 
+  /** The guard's vision cone as a polygon: 26 rays across the cone, each
+   *  marched until it hits a wall, crate or bush, so the cone hugs the cover
+   *  instead of shining through it. Points are canvas pixels. */
+  function conePoints(state, guard) {
+    const p = px(guard.x, guard.y);
+    const rays = 26;
+    const pts = [];
+    for (let i = 0; i <= rays; i += 1) {
+      const ang = guard.facing - CONE_HALF_ANGLE + (2 * CONE_HALF_ANGLE * i) / rays;
+      let r = CONE_RANGE;
+      for (let d = 8; d <= CONE_RANGE; d += 6) {
+        const mx = guard.x + Math.cos(ang) * d;
+        const my = guard.y + Math.sin(ang) * d;
+        const tx = Math.floor(mx / TILE);
+        const ty = Math.floor(my / TILE);
+        if (tx < 0 || ty < 0 || tx >= MAP_COLS || ty >= MAP_ROWS) { r = d; break; }
+        const ch = state.tiles[ty][tx];
+        if (ch === '#' || ch === 'c' || ch === 'b') { r = d; break; }
+      }
+      pts.push({ x: p.x + Math.cos(ang) * r, y: p.y + Math.sin(ang) * r });
+    }
+    return pts;
+  }
+
+  function traceCone(c, state, guard) {
+    const p = px(guard.x, guard.y);
+    const pts = conePoints(state, guard);
+    c.beginPath();
+    c.moveTo(p.x, p.y);
+    for (const pt of pts) c.lineTo(pt.x, pt.y);
+    c.closePath();
+  }
+
   function drawCones(state) {
     for (const guard of state.guards) {
-      const p = px(guard.x, guard.y);
       const color = guard.state === 'alert'
         ? '255,60,60' : guard.state === 'suspicious' ? '255,150,40' : '255,214,64';
       const alpha = guard.state === 'alert' ? 0.34 : guard.state === 'suspicious' ? 0.3 : 0.2;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.arc(p.x, p.y, CONE_RANGE, guard.facing - CONE_HALF_ANGLE, guard.facing + CONE_HALF_ANGLE);
-      ctx.closePath();
+      traceCone(ctx, state, guard);
       ctx.fillStyle = `rgba(${color},${alpha})`;
       ctx.fill();
       ctx.strokeStyle = `rgba(${color},0.5)`;
@@ -328,10 +357,7 @@ export function createRenderer(canvas) {
       g.addColorStop(0, 'rgba(255,255,255,0.5)');
       g.addColorStop(1, 'rgba(255,255,255,0)');
       dctx.fillStyle = g;
-      dctx.beginPath();
-      dctx.moveTo(gp.x, gp.y);
-      dctx.arc(gp.x, gp.y, CONE_RANGE, guard.facing - CONE_HALF_ANGLE, guard.facing + CONE_HALF_ANGLE);
-      dctx.closePath();
+      traceCone(dctx, state, guard);
       dctx.fill();
     }
     // The exit glows through the dark.
